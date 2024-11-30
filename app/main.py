@@ -1,10 +1,28 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
 from app.routes import prediction
 
-# Initialize the FastAPI app
-app = FastAPI()
+load_dotenv()
+app = FastAPI(
+    title="Image Prediction API",
+    description="API to predict masks using a pre-trained model.",
+    version="1.0.0"
+)
 
-# Include the prediction route
+origins = [
+    "*",
+]
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],  
+    allow_headers=["*"],
+)
+
 app.include_router(prediction.router)
 
 # Home route (optional)
