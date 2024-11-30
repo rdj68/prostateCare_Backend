@@ -1,8 +1,14 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
 from app.routes import prediction
 
-app = FastAPI()
+load_dotenv()
+app = FastAPI(
+    title="Image Prediction API",
+    description="API to predict masks using a pre-trained model.",
+    version="1.0.0"
+)
 
 origins = [
     "*",
