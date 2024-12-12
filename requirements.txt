@@ -7,3 +7,5 @@ python-multipart
 tensorflow
 python-dotenv
 firebase-admin
+cryptography
+pycryptodome

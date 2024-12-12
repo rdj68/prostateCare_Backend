@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import APIRouter, Form, UploadFile, File, HTTPException, Depends
 from fastapi.responses import JSONResponse
 import logging
@@ -6,6 +7,9 @@ from app.services.model import predict_mask, preprocess_image
 from io import BytesIO
 from PIL import Image, UnidentifiedImageError
 import time
+from firebase_admin import firestore
+from app.services.firebase import db
+from app.utils.encryption import encrypt_data, decrypt_data
 
 router = APIRouter()
 
@@ -17,6 +21,7 @@ async def predict(
     user_id: str = Form(...),
     firebase_token: str = Form(...),
     image: UploadFile = File(...),
+    patient_name: Optional[str] = Form(None),
     verified_user: dict = Depends(verify_firebase_token)
 ):
     """
@@ -64,6 +69,17 @@ async def predict(
         # Update the Firestore document with the image URLs
         update_user_images(user_id, original_image_url, mask_image_url)
 
+        if patient_name:
+            encrypted_name = encrypt_data(patient_name)
+            db.collection('patients').add({
+                'name': encrypted_name,
+                'doctor_id': user_id,
+                'results': {
+                    'original_image_url': original_image_url,
+                    'mask_image_url': mask_image_url,
+                }
+            })
+
         # Return the response with image and mask URLs
         return JSONResponse(
             content={
@@ -79,3 +95,51 @@ async def predict(
     except Exception as e:
         logging.error(e)
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+
+@router.post("/patients")
+async def get_patients(
+    doctor_id: str = Form(...),   # Doctor's ID, passed as a form field
+    name: Optional[str] = Form(None),  # Patient's name, passed as a form field
+    firebase_token: str = Form(...),  # Firebase token for authentication
+    verified_user: dict = Depends(verify_firebase_token)  # Verify the user's identity
+):
+    """
+    Fetch patients assigned to the doctor based on doctor's ID and patient name.
+    """
+    try:
+        # Ensure the requesting doctor is the one associated with the doctor_id
+        if verified_user.get("uid") != doctor_id:
+            raise HTTPException(status_code=403, detail="Unauthorized access. Only the doctor can fetch their patients.")
+
+        # Query Firestore
+        
+        if name:
+            print(name, "name")
+            encrypted_name = encrypt_data(name)
+            print(encrypted_name)
+            patients_snapshot = (
+                db.collection('patients')
+                .where('doctor_id', '==', doctor_id)
+                .where('name', '==', encrypted_name)
+                .limit(10)
+                .stream()
+            )
+        else:
+            patients_snapshot = (
+                db.collection('patients')
+                .where('doctor_id', '==', doctor_id)
+                .limit(10)
+                .stream()
+            )
+
+        patients = []
+        for doc in patients_snapshot:
+            data = doc.to_dict()
+            data["name"] = decrypt_data(data["name"])
+            patients.append({"id": doc.id, **data})
+
+        return {"patients": patients}
+
+    except Exception as e:
+        print(e)
+        raise HTTPException(status_code=500, detail=f"Error fetching patients: {str(e)}")
